@@ -44,8 +44,6 @@ class Agent:
             self.last_action = actions_to_take_idx
             return actions_to_take
 
-        print(actions_to_take_idx)
-        print('\n')
         self.NN.backward(*self.helper_make_batch_from_one(self.last_state, self.last_action, last_reward))
 
         # bookkeeping
@@ -88,14 +86,14 @@ class NN:
         self.prob_action_break = tf.nn.softmax(logit_action_break)
 
         # computing a lot of losses
-        loss_action_steer = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        self.loss_action_steer = tf.nn.sparse_softmax_cross_entropy_with_logits(
             self.logit_action_steer, self.true_action_steer)
-        loss_action_gas = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        self.loss_action_gas = tf.nn.sparse_softmax_cross_entropy_with_logits(
             logit_action_gas, self.true_action_gas)
-        loss_action_break = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        self.loss_action_break = tf.nn.sparse_softmax_cross_entropy_with_logits(
             logit_action_break, self.true_action_break)
 
-        loss = loss_action_steer + loss_action_gas + loss_action_break
+        loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break
         self.loss = self.reward * loss
 
         # some other stuffs, and variable initialization
@@ -138,13 +136,15 @@ class NN:
         return [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]], [steerIDX, gasIDX, breakIDX]
 
     def backward(self, state_batch, action_batch, reward_batch):
-        self._sess.run(self.train_op, feed_dict={
+        _, loss, loss_steer, loss_gas, loss_break = self._sess.run(
+            [self.train_op, self.loss, self.loss_action_steer, self.loss_action_gas, self.loss_action_break], feed_dict={
                 self.state:             state_batch,
                 self.true_action_steer: action_batch[:, 0],
                 self.true_action_gas:   action_batch[:, 1],
                 self.true_action_break: action_batch[:, 2],
                 self.reward:            reward_batch,
             })
+        print ('loss: %f loss_steer: %f loss_gas: %f loss_break: %f' % (loss, loss_steer, loss_gas, loss_break) )
 
 
 if __name__=='__main__':
