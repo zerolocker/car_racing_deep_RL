@@ -69,7 +69,7 @@ class FrictionDetector(contactListener):
     def __init__(self, env):
         contactListener.__init__(self)
         self.env = env
-        self.lastTouchRoadTime = time.time()
+        self.lastTouchRoadTime = None
     def BeginContact(self, contact):
         self._contact(contact, True)
     def EndContact(self, contact):
@@ -325,6 +325,10 @@ class CarRacing(gym.Env):
             if abs(x) > PLAYFIELD or abs(y) > PLAYFIELD:
                 done = True
                 step_reward = -100
+            if self.contactListener_keepref.lastTouchRoadTime is not None and \
+                    time.time() - self.contactListener_keepref.lastTouchRoadTime > 1:
+                step_reward = -100
+                done = True
 
         return self.state, step_reward, done, {}
 
@@ -344,7 +348,7 @@ class CarRacing(gym.Env):
 
         if "t" not in self.__dict__: return  # reset() not called yet
 
-        zoom = 0.1*SCALE*max(1-self.t, 0) + ZOOM*SCALE*min(self.t, 1)   # Animate zoom first second
+        zoom = 0.1*SCALE*max(1-self.t*4, 0) + ZOOM*SCALE*min(self.t*4, 1)   # Animate zoom first 0.25 second
         zoom_state  = ZOOM*SCALE*STATE_W/WINDOW_W
         zoom_video  = ZOOM*SCALE*VIDEO_W/WINDOW_W
         scroll_x = self.car.hull.position[0]

@@ -5,6 +5,7 @@ from IPython import embed
 
 import lib, my_car_env
 
+render = True if len(sys.argv)>1 and sys.argv[1]=='render' else False
 
 def preprocess_state(rgb, flatten=False):
     grey =  np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
@@ -46,7 +47,8 @@ if __name__=="__main__":
         restart = False
 
         while True:
-            if steps < 100: 
+            if steps < 30:
+                env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if steps<30
                 unprocessed_s, r, done, info = env.step(action=[0., 0., 0.])
             else:
                 a = agent.act(envHelper.get_state(), r)
@@ -62,7 +64,7 @@ if __name__=="__main__":
                 print("\naction " + str(["{:+0.2f}".format(x) for x in a]))
                 print("step {} total_reward {:+0.2f}".format(steps, total_reward))
             steps += 1
-            if not record_video: # Faster, but you can as well call env.render() every time to play full window.
+            if render and not record_video: # Faster, but you can as well call env.render() every time to play full window.
                 env.render()
             if done or restart: break
     env.monitor.close()
