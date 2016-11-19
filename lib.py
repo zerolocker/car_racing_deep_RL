@@ -97,14 +97,15 @@ class NN:
         self.loss = self.reward * loss
 
         # some other stuffs, and variable initialization
-        self.train_op = tf.train.AdamOptimizer(learning_rate=0.01).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
         self._sess.run(tf.initialize_all_variables())
 
 
     def conv_layer(self, input, n_in_channel, n_out_channel, filter_size, stride, hasRelu=True):
-        # TODO conv layer without adding bias ( bias is not used in paper either). but I could try it later if time permitted. tf.nn.bias_add
         filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001))
+        bias = tf.Variable(tf.truncated_normal([n_out_channel], stddev = 0.001))
         output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
+        output = tf.nn.bias_add(output, bias)
         # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
         if hasRelu:
             output = tf.nn.relu(output)

@@ -1,21 +1,9 @@
 import sys, math, time
 import numpy as np
 
-import Box2D
-from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
-
-import gym
-from gym import spaces
-from gym.envs.box2d.car_dynamics import Car
-from gym.envs.classic_control import rendering
-from gym.utils import colorize, seeding
-
-import pyglet
-from pyglet.gl import *
-import matplotlib.pyplot as plt
 from IPython import embed
 
-import lib
+import lib, my_car_env
 
 
 def preprocess_state(rgb, flatten=False):
@@ -39,7 +27,7 @@ if __name__=="__main__":
         if k==key.RIGHT and a[0]==+1.0: a[0] = 0
         if k==key.UP:    a[1] = 0
         if k==key.DOWN:  a[2] = 0
-    env = gym.make('CarRacing-v0')
+    env = my_car_env.CarRacing()
     env.render()
     record_video = False
     if record_video:
@@ -67,12 +55,6 @@ if __name__=="__main__":
             envHelper.add_frame_to_state(s)
 
             total_reward += r
-            if steps == 105:
-                import tensorflow as tf
-                vlist = tf.all_variables()
-                print sorted([np.linalg.norm(v) for v in agent.NN._sess.run(vlist)],reverse=True)
-                print 'look at the norm, they are so big'
-                time.sleep(10)
             if steps % 200 == 0 or done:
                 # plt.imshow(s, cmap='gray')
                 # plt.show()
