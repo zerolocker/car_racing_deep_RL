@@ -122,32 +122,25 @@ class NN:
         self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
 
         # build the policy network
-        cur = self.state
-        cur = self.conv_layer(cur, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
-        self.conv1 = cur
-        cur = self.conv_layer(cur, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
-        self.conv2 = cur
-        cur = self.fc_layer(cur, n_out=256, name='fc1')
-        self.fc1 = cur
-        cur = tf.nn.relu(cur)
-        self.logit_action_steer = self.fc_layer(cur, n_out=len(action_steer), name='fc_steer')
-        self.fc_steer = cur
-        logit_action_gas = self.fc_layer(cur, n_out=len(action_gas), name='fc_gas')
-        self.fc_gas = cur
-        logit_action_break = self.fc_layer(cur, n_out=len(action_break), name='fc_break')
-        self.fc_break = cur
+        self.conv1 = self.conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
+        self.conv2 = self.conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
+        self.fc1 = self.fc_layer(self.conv2, n_out=256, name='fc1')
+        self.relu1 = tf.nn.relu(self.fc1)
+        self.logit_steer = self.fc_layer(self.relu1, n_out=len(action_steer), name='fc_steer')
+        self.logit_gas = self.fc_layer(self.relu1, n_out=len(action_gas), name='fc_gas')
+        self.logit_break = self.fc_layer(self.relu1, n_out=len(action_break), name='fc_break')
 
-        self.prob_action_steer = tf.nn.softmax(self.logit_action_steer)
-        self.prob_action_gas = tf.nn.softmax(logit_action_gas)
-        self.prob_action_break = tf.nn.softmax(logit_action_break)
+        self.prob_action_steer = tf.nn.softmax(self.logit_steer)
+        self.prob_action_gas = tf.nn.softmax(self.logit_gas)
+        self.prob_action_break = tf.nn.softmax(self.logit_break)
 
         # computing a lot of losses
         self.loss_action_steer = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            self.logit_action_steer, self.true_action_steer))
+            self.logit_steer, self.true_action_steer))
         self.loss_action_gas = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logit_action_gas, self.true_action_gas))
+            self.logit_gas, self.true_action_gas))
         self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logit_action_break, self.true_action_break))
+            self.logit_break, self.true_action_break))
 
         self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break
 
@@ -189,11 +182,11 @@ class NN:
         breakIDX = np.random.choice(len(action_break), p=probs[2][0])
         a = [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]]
         if True:
-            logit_action_steer_np = self._sess.run([self.logit_action_steer], feed_dict={self.state:input})
-            print logit_action_steer_np, a
+            logit_steer_np = self._sess.run([self.logit_steer], feed_dict={self.state:input})
+            print logit_steer_np, a
         if self.debug:
             self.debug = False
-            [conv1,conv2,fc1,fc_steer,fc_gas,fc_break] = self._sess.run([self.conv1, self.conv2, self.fc1, self.fc_steer, self.fc_gas, self.fc_gas], feed_dict={self.state:input})
+            [conv1,conv2,fc1,fc_steer,fc_gas,fc_break] = self._sess.run([self.conv1, self.conv2, self.fc1, self.logit_steer, self.logit_gas, self.logit_break], feed_dict={self.state:input})
             embed()
             self.lastInput = input
         return a, [steerIDX, gasIDX, breakIDX]
@@ -210,6 +203,15 @@ class NN:
             })
         print ('loss: %f loss_steer: %f loss_gas: %f loss_break: %f' % (loss, loss_steer, loss_gas, loss_break) )
 
+def plot(inputs):
+    # example usage: plot([conv1, conv2]); plot([state])
+    row, col = len(inputs), inputs[0].shape[3]
+    f,ax=plt.subplots(row,col)
+    ax = ax.reshape(row,col)
+    for i in xrange(row):
+        for j in xrange(col):
+            ax[i][j].imshow(inputs[i][0,:,:,j])
+    plt.show()
 
 
 if __name__=='__main__':
