@@ -110,6 +110,7 @@ class NN:
         # mow I will just use the formula without gamma and thus a monte carlo method
         self._sess = tf.Session()
         self.gamma = gamma
+        self.debug = False
 
         # create placeholders
         self.true_action_steer = tf.placeholder(shape=[None], dtype=tf.int32)
@@ -123,12 +124,18 @@ class NN:
         # build the policy network
         cur = self.state
         cur = self.conv_layer(cur, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
+        self.conv1 = cur
         cur = self.conv_layer(cur, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
+        self.conv2 = cur
         cur = self.fc_layer(cur, n_out=256, name='fc1')
+        self.fc1 = cur
         cur = tf.nn.relu(cur)
         self.logit_action_steer = self.fc_layer(cur, n_out=len(action_steer), name='fc_steer')
+        self.fc_steer = cur
         logit_action_gas = self.fc_layer(cur, n_out=len(action_gas), name='fc_gas')
+        self.fc_gas = cur
         logit_action_break = self.fc_layer(cur, n_out=len(action_break), name='fc_break')
+        self.fc_break = cur
 
         self.prob_action_steer = tf.nn.softmax(self.logit_action_steer)
         self.prob_action_gas = tf.nn.softmax(logit_action_gas)
@@ -171,7 +178,7 @@ class NN:
         print ("fc layer, input*output : %d*%d" % (n_in, n_out))
         return output
 
-    def forward_and_sample(self, input, debug=True):
+    def forward_and_sample(self, input):
         input = np.expand_dims(input,0) # make a batch
         probs = self._sess.run([self.prob_action_steer, self.prob_action_gas, self.prob_action_break], 
             feed_dict={self.state:input})
@@ -181,9 +188,14 @@ class NN:
         gasIDX = np.random.choice(len(action_gas), p=probs[1][0])
         breakIDX = np.random.choice(len(action_break), p=probs[2][0])
         a = [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]]
-        if debug:
+        if True:
             logit_action_steer_np = self._sess.run([self.logit_action_steer], feed_dict={self.state:input})
             print logit_action_steer_np, a
+        if self.debug:
+            self.debug = False
+            [conv1,conv2,fc1,fc_steer,fc_gas,fc_break] = self._sess.run([self.conv1, self.conv2, self.fc1, self.fc_steer, self.fc_gas, self.fc_gas], feed_dict={self.state:input})
+            embed()
+            self.lastInput = input
         return a, [steerIDX, gasIDX, breakIDX]
 
     def backward(self, state_batch, action_batch, reward_batch):

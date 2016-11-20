@@ -18,6 +18,7 @@ if __name__=="__main__":
     a = np.array( [0.0, 0.0, 0.0] )
     def key_press(k, mod):
         if k==key.D:     agent.debug=True
+        if k==key.N:     agent.NN.debug=True
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
