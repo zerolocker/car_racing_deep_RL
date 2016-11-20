@@ -14,7 +14,7 @@ action_steer = [-1.0, -0.5, 0.0, 0.5, 1.0]
 action_gas = [0.1, 0.5, 1.0]
 action_break = [0.0, 0.1]
 
-BATCH_SIZE = 2
+BATCH_SIZE = 5
 GAMMA = 0.9
 
 class EnvHelper:
@@ -122,9 +122,9 @@ class NN:
         self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
 
         # build the policy network
-        self.conv1 = self.conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
-        self.conv2 = self.conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
-        self.fc1 = self.fc_layer(self.conv2, n_out=256, name='fc1')
+        self.conv1 = self.conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=8, filter_size=8, stride=4, name='conv1')
+        self.conv2 = self.conv_layer(self.conv1, n_in_channel=8, n_out_channel=16, filter_size=4, stride=2, name='conv2')
+        self.fc1 = self.fc_layer(self.conv2, n_out=64, name='fc1')
         self.relu1 = tf.nn.relu(self.fc1)
         self.logit_steer = self.fc_layer(self.relu1, n_out=len(action_steer), name='fc_steer')
         self.logit_gas = self.fc_layer(self.relu1, n_out=len(action_gas), name='fc_gas')
@@ -145,7 +145,7 @@ class NN:
         self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break
 
         # some other stuffs, and variable initialization
-        self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(learning_rate=0.0005).minimize(self.loss)
         self._sess.run(tf.initialize_all_variables())
 
 
