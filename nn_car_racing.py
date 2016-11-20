@@ -50,9 +50,10 @@ if __name__=="__main__":
         while True:
             if steps < 30:
                 env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if steps<30
-                unprocessed_s, r, done, info = env.step(action=[0., 0., 0.])
+                unprocessed_s, r, done, info = env.step(action=[0., 1., 0.])
             else:
-                a = agent.act(envHelper.get_state(), r, done)
+                a = agent.act(envHelper.get_state(), r, done); 
+                a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
                 if done: break
                 r = 0;
                 for i in xrange(SKIP_FRAME):

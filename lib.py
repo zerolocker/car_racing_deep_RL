@@ -143,7 +143,7 @@ class NN:
         self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
             self.logit_break, self.true_action_break))
 
-        self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + 0.5 * tf.nn.l2_loss(self.fc1W)
+        self.loss = self.loss_action_steer + 0.5 * tf.nn.l2_loss(self.fc1W) # + self.loss_action_gas + self.loss_action_break 
 
         # some other stuffs, and variable initialization
         self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
