@@ -40,6 +40,7 @@ if __name__=="__main__":
     envHelper = lib.EnvHelper()
     agent = lib.Agent()
 
+    SKIP_FRAME = 5
     while True:
         env.reset()
         total_reward = 0.0
@@ -52,7 +53,12 @@ if __name__=="__main__":
             else:
                 a = agent.act(envHelper.get_state(), r, done)
                 if done: break
-                unprocessed_s, r, done, info = env.step(a)
+                r = 0;
+                for i in xrange(SKIP_FRAME):
+                    unprocessed_s, r_f, done, info = env.step(a)
+                    r += r_f
+                    if render and not record_video: env.render() 
+                    if done: break
             s = preprocess_state(unprocessed_s)
             envHelper.add_frame_to_state(s)
 
@@ -63,10 +69,7 @@ if __name__=="__main__":
                 # plt.show()
                 # plt.pause(0.01) # make the figure draw non-blockingly. using this you don't even need to call plt.ion() at the start
             if done:
-                print("\naction " + str(["{:+0.2f}".format(x) for x in a]))
                 print("step {} (undiscounted)total_reward {:+0.2f}".format(steps, total_reward))
             steps += 1
-            if render and not record_video: # Faster, but you can as well call env.render() every time to play full window.
-                env.render()
     env.monitor.close()
 

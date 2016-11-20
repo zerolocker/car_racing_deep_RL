@@ -58,7 +58,7 @@ class Agent:
         self.reward_batch.append(last_reward)
 
         if done:
-            assert self.reward_batch[-1] == -100 # make sure epEnd and reward_batch is correctly aligned
+            assert self.reward_batch[-1] < -90 # make sure epEnd and reward_batch is correctly aligned
             self.epEnd.add(len(self.reward_batch)-1)
             print(self.epEnd, self.reward_batch[-1])
             # TODO (maybe) can call tf.compute_gradient every episode rather than every batch to amortize
@@ -152,7 +152,7 @@ class NN:
     def conv_layer(self, input, n_in_channel, n_out_channel, filter_size, stride, name, hasRelu=True):
         with tf.variable_scope(name):
             filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001), name='W')
-            bias = tf.Variable(tf.truncated_normal([n_out_channel], stddev = 0.001), name='b')
+            bias = tf.Variable(tf.constant(1.0,shape=[n_out_channel]), name='b')
         output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
         output = tf.nn.bias_add(output, bias)
         # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
