@@ -19,6 +19,7 @@ if __name__=="__main__":
     def key_press(k, mod):
         if k==key.D:     agent.debug=True
         if k==key.N:     agent.NN.debug=True
+        if k==key.A:     agent.NN.printAct = not agent.NN.printAct
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
@@ -41,10 +42,10 @@ if __name__=="__main__":
     agent = lib.Agent()
 
     SKIP_FRAME = 5
+    ep = 0
     while True:
         env.reset()
-        total_reward = 0.0
-        steps = 0
+        total_reward, steps, ep = 0.0,0,ep+1
 
         while True:
             if steps < 30:
@@ -69,7 +70,7 @@ if __name__=="__main__":
                 # plt.show()
                 # plt.pause(0.01) # make the figure draw non-blockingly. using this you don't even need to call plt.ion() at the start
             if done:
-                print("step {} (undiscounted)total_reward {:+0.2f}".format(steps, total_reward))
+                 print("episode {} (undiscounted)total_reward {:+0.2f}".format(ep, total_reward))
             steps += 1
     env.monitor.close()
 

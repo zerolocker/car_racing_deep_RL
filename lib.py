@@ -14,8 +14,8 @@ action_steer = [-1.0, -0.5, 0.0, 0.5, 1.0]
 action_gas = [0.1, 0.5, 1.0]
 action_break = [0.0, 0.1]
 
-BATCH_SIZE = 2
-GAMMA = 0.9
+BATCH_SIZE = 5
+GAMMA = 0.99
 
 class EnvHelper:
     state_queue = deque(maxlen=STATE_FRAME_CNT) # the state is made up of 4 most recent frames
@@ -60,7 +60,6 @@ class Agent:
         if done:
             assert self.reward_batch[-1] < -90 # make sure epEnd and reward_batch is correctly aligned
             self.epEnd.add(len(self.reward_batch)-1)
-            print(self.epEnd, self.reward_batch[-1])
             # TODO (maybe) can call tf.compute_gradient every episode rather than every batch to amortize
 
         if len(self.epEnd) == BATCH_SIZE: # a batch of episodes has been collected
@@ -111,6 +110,7 @@ class NN:
         self._sess = tf.Session()
         self.gamma = gamma
         self.debug = False
+        self.printAct = True
 
         # create placeholders
         self.true_action_steer = tf.placeholder(shape=[None], dtype=tf.int32)
@@ -124,11 +124,12 @@ class NN:
         # build the policy network
         self.conv1 = self.conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
         self.conv2 = self.conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
-        self.fc1 = self.fc_layer(self.conv2, n_out=256, name='fc1')
+        self.fc1, self.fc1W = self.fc_layer(self.conv2, n_out=256, name='fc1')
         self.relu1 = tf.nn.relu(self.fc1)
-        self.logit_steer = self.fc_layer(self.relu1, n_out=len(action_steer), name='fc_steer')
-        self.logit_gas = self.fc_layer(self.relu1, n_out=len(action_gas), name='fc_gas')
-        self.logit_break = self.fc_layer(self.relu1, n_out=len(action_break), name='fc_break')
+        self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
+        self.logit_steer, self.steerW = self.fc_layer(self.relu1_d, n_out=len(action_steer), name='fc_steer')
+        self.logit_gas, self.gasW = self.fc_layer(self.relu1_d, n_out=len(action_gas), name='fc_gas')
+        self.logit_break,self.breakW = self.fc_layer(self.relu1_d, n_out=len(action_break), name='fc_break')
 
         self.prob_action_steer = tf.nn.softmax(self.logit_steer)
         self.prob_action_gas = tf.nn.softmax(self.logit_gas)
@@ -142,10 +143,10 @@ class NN:
         self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
             self.logit_break, self.true_action_break))
 
-        self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break
+        self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + 0.5 * tf.nn.l2_loss(self.fc1W)
 
         # some other stuffs, and variable initialization
-        self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+        self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
         self._sess.run(tf.initialize_all_variables())
 
 
@@ -169,7 +170,7 @@ class NN:
             bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001), name='b')
         output = tf.nn.bias_add(tf.matmul(input, W), bias)
         print ("fc layer, input*output : %d*%d" % (n_in, n_out))
-        return output
+        return output, W
 
     def forward_and_sample(self, input):
         input = np.expand_dims(input,0) # make a batch
@@ -181,14 +182,13 @@ class NN:
         gasIDX = np.random.choice(len(action_gas), p=probs[1][0])
         breakIDX = np.random.choice(len(action_break), p=probs[2][0])
         a = [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]]
-        if True:
-            logit_steer_np = self._sess.run([self.logit_steer], feed_dict={self.state:input})
-            print logit_steer_np, a
+        if self.printAct:
+            logits = self._sess.run([self.logit_steer, self.logit_gas, self.logit_break], feed_dict={self.state:input})
+            pp.pprint([[v for v in act_logit[0]] for act_logit in logits] + [a])
         if self.debug:
             self.debug = False
             [conv1,conv2,fc1,fc_steer,fc_gas,fc_break] = self._sess.run([self.conv1, self.conv2, self.fc1, self.logit_steer, self.logit_gas, self.logit_break], feed_dict={self.state:input})
             embed()
-            self.lastInput = input
         return a, [steerIDX, gasIDX, breakIDX]
 
     def backward(self, state_batch, action_batch, reward_batch):
