@@ -326,7 +326,7 @@ class CarRacing(gym.Env):
                 done = True
                 step_reward = -100
             if self.contactListener_keepref.lastTouchRoadTime is not None and \
-                    time.time() - self.contactListener_keepref.lastTouchRoadTime > 1:
+                    time.time() - self.contactListener_keepref.lastTouchRoadTime > 0.5:
                 step_reward = -100
                 done = True
 

@@ -2,18 +2,20 @@ from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import pprint as pp
 from IPython import embed
+import ipdb
 
 STATE_H = 80
 STATE_W = 96
 STATE_FRAME_CNT = 4
 # discrete actions used by the agent
 action_steer = [-1.0, -0.5, 0.0, 0.5, 1.0]
-action_gas = [0.0, 0.5, 1.0]
-action_break = [0.0, 0.5, 1.0]
+action_gas = [0.1, 0.5, 1.0]
+action_break = [0.0, 0.1]
 
 BATCH_SIZE = 2
-GAMMA = 0.99
+GAMMA = 0.9
 
 class EnvHelper:
     state_queue = deque(maxlen=STATE_FRAME_CNT) # the state is made up of 4 most recent frames
@@ -34,6 +36,8 @@ class Agent:
         self.NN = NN(GAMMA)
         self.last_action, self.last_state = None, None
         self.init_batch()
+        self.debug = False
+        self.max_mean_reward = -500.0
 
     def init_batch(self):
         self.epEnd = set() # stores the time step where the episode ends
@@ -61,9 +65,15 @@ class Agent:
 
         if len(self.epEnd) == BATCH_SIZE: # a batch of episodes has been collected
             discounted_r = self.discount_rewards(self.reward_batch, self.epEnd)
+            if self.debug: 
+                self.debug=False
+                self.printnorm()
+                embed() 
             mean, std = np.mean(discounted_r), np.std(discounted_r)
-            discounted_r = (discounted_r - mean) / std # TODO (maybe) use a state-value approx
-            print('bsize: %d mean: %.3f std: %.3f epEnd: %s' % (discounted_r.size, mean, std, str(self.epEnd)))
+            # use max mean reward seen so far instead of mean, to prevent the agent satisfying with current mean
+            self.max_mean_reward = max(self.max_mean_reward, mean)
+            discounted_r = (discounted_r - self.max_mean_reward) / std # TODO (maybe) use a state-value approx
+            print('bsize: %d std: %.3f mean: %.3f max_mean: %.3f' % (discounted_r.size, std, mean, self.max_mean_reward))
             self.NN.backward(self.state_batch, self.action_batch, discounted_r)
             self.init_batch() # clean up
 
@@ -86,6 +96,13 @@ class Agent:
             res[t] = running_add
         return res
 
+    def printnorm(self):
+        normdict={}
+        for v in tf.all_variables(): 
+         if '/W:0' in v.name or '/b:0' in v.name:
+             normdict[v.name]=np.linalg.norm(self.NN._sess.run(v))
+        pp.pprint(normdict)
+
 class NN:
     def __init__(self, gamma): 
         # Note for the gamma parameter: current impl did not use the forumla in textbook which has gamma^t * reward
@@ -105,13 +122,13 @@ class NN:
 
         # build the policy network
         cur = self.state
-        cur = self.conv_layer(cur, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4)
-        cur = self.conv_layer(cur, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2)
-        cur = self.fc_layer(cur, n_out=256)
+        cur = self.conv_layer(cur, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
+        cur = self.conv_layer(cur, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
+        cur = self.fc_layer(cur, n_out=256, name='fc1')
         cur = tf.nn.relu(cur)
-        self.logit_action_steer = self.fc_layer(cur, n_out=len(action_steer))
-        logit_action_gas = self.fc_layer(cur, n_out=len(action_gas))
-        logit_action_break = self.fc_layer(cur, n_out=len(action_break))
+        self.logit_action_steer = self.fc_layer(cur, n_out=len(action_steer), name='fc_steer')
+        logit_action_gas = self.fc_layer(cur, n_out=len(action_gas), name='fc_gas')
+        logit_action_break = self.fc_layer(cur, n_out=len(action_break), name='fc_break')
 
         self.prob_action_steer = tf.nn.softmax(self.logit_action_steer)
         self.prob_action_gas = tf.nn.softmax(logit_action_gas)
@@ -132,9 +149,10 @@ class NN:
         self._sess.run(tf.initialize_all_variables())
 
 
-    def conv_layer(self, input, n_in_channel, n_out_channel, filter_size, stride, hasRelu=True):
-        filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001))
-        bias = tf.Variable(tf.truncated_normal([n_out_channel], stddev = 0.001))
+    def conv_layer(self, input, n_in_channel, n_out_channel, filter_size, stride, name, hasRelu=True):
+        with tf.variable_scope(name):
+            filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001), name='W')
+            bias = tf.Variable(tf.truncated_normal([n_out_channel], stddev = 0.001), name='b')
         output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
         output = tf.nn.bias_add(output, bias)
         # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
@@ -143,30 +161,30 @@ class NN:
         print("conv layer, output size: %s" % ([i.value for i in output.get_shape()]))
         return output
 
-    def fc_layer(self, input, n_out):
+    def fc_layer(self, input, n_out, name):
         n_in = np.prod(input.get_shape().as_list()[1:])
         input = tf.reshape(input, [-1, n_in])
-
-        W = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=0.001))
-        bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001))
+        with tf.variable_scope(name):
+            W = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=0.001), name='W')
+            bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001), name='b')
         output = tf.nn.bias_add(tf.matmul(input, W), bias)
         print ("fc layer, input*output : %d*%d" % (n_in, n_out))
         return output
 
-    def forward_and_sample(self, input, debug=False):
+    def forward_and_sample(self, input, debug=True):
         input = np.expand_dims(input,0) # make a batch
         probs = self._sess.run([self.prob_action_steer, self.prob_action_gas, self.prob_action_break], 
             feed_dict={self.state:input})
-        
-        if debug:
-            logit_action_steer_np = self._sess.run([self.logit_action_steer], feed_dict={self.state:input})
-            print logit_action_steer_np
 
         assert probs[0].shape == (1, len(action_steer))
         steerIDX = np.random.choice(len(action_steer), p=probs[0][0])
         gasIDX = np.random.choice(len(action_gas), p=probs[1][0])
         breakIDX = np.random.choice(len(action_break), p=probs[2][0])
-        return [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]], [steerIDX, gasIDX, breakIDX]
+        a = [action_steer[steerIDX], action_gas[gasIDX], action_break[breakIDX]]
+        if debug:
+            logit_action_steer_np = self._sess.run([self.logit_action_steer], feed_dict={self.state:input})
+            print logit_action_steer_np, a
+        return a, [steerIDX, gasIDX, breakIDX]
 
     def backward(self, state_batch, action_batch, reward_batch):
         action_batch = np.asarray(action_batch, dtype=np.int32)

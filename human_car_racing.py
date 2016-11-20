@@ -1,19 +1,10 @@
-import sys, math
+import sys, math, time
 import numpy as np
 
-import Box2D
-from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
-
-import gym
-from gym import spaces
-from gym.envs.box2d.car_dynamics import Car
-from gym.envs.classic_control import rendering
-from gym.utils import colorize, seeding
-
-import pyglet
-from pyglet.gl import *
-import matplotlib.pyplot as plt
 from IPython import embed
+
+import lib, my_car_env
+import matplotlib.pyplot as plt
 
 
 def preprocess_state(rgb, flatten=False):
@@ -28,6 +19,7 @@ if __name__=="__main__":
     def key_press(k, mod):
         global restart
         if k==0xff0d: restart = True
+        if k==key.D:  restart=True
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
@@ -37,7 +29,7 @@ if __name__=="__main__":
         if k==key.RIGHT and a[0]==+1.0: a[0] = 0
         if k==key.UP:    a[1] = 0
         if k==key.DOWN:  a[2] = 0
-    env = gym.make('CarRacing-v0')
+    env = my_car_env.CarRacing()
     env.render()
     record_video = False
     if record_video:
@@ -53,7 +45,10 @@ if __name__=="__main__":
         steps = 0
         restart = False
         while True:
+            if steps<100:
+                env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if ststeps<100
             s, r, done, info = env.step(a)
+            print(a)
             total_reward += r
             
             nFrame += 1
@@ -61,10 +56,11 @@ if __name__=="__main__":
             if nFrame % 1000 == 0: print running_mean
 
             if steps % 200 == 0 or done:
-                plt.imshow(preprocess_state(s), cmap='gray')
-                plt.pause(0.01) # make the figure draw non-blockingly. using this you don't even need to call plt.ion() at the start
-                print("\naction " + str(["{:+0.2f}".format(x) for x in a]))
-                print("step {} total_reward {:+0.2f}".format(steps, total_reward))
+                pass
+                #plt.imshow(preprocess_state(s), cmap='gray')
+                #plt.pause(0.01) # make the figure draw non-blockingly. using this you don't even need to call plt.ion() at the start
+                #print("\naction " + str(["{:+0.2f}".format(x) for x in a]))
+                #print("step {} total_reward {:+0.2f}".format(steps, total_reward))
                 #import matplotlib.pyplot as plt
                 #plt.imshow(s)
                 #plt.savefig("test.jpeg")
