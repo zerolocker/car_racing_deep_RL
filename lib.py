@@ -33,11 +33,15 @@ class EnvHelper:
 class Agent:
 
     def __init__(self):
-        self.NN = NN(GAMMA)
+        self._sess = tf.Session()
+        self.NN = NN(self._sess)
+        self.NNb = NNForBaseline(self._sess)
+
         self.last_action, self.last_state = None, None
         self.init_batch()
         self.debug = False
         self.max_mean_reward = -500.0
+        self.startPolicyTraining = False
 
     def init_batch(self):
         self.epEnd = set() # stores the time step where the episode ends
@@ -66,14 +70,12 @@ class Agent:
             discounted_r = self.discount_rewards(self.reward_batch, self.epEnd)
             if self.debug: 
                 self.debug=False
-                self.printnorm()
-                embed() 
-            mean, std = np.mean(discounted_r), np.std(discounted_r)
-            # use max mean reward seen so far instead of mean, to prevent the agent satisfying with current mean
-            self.max_mean_reward = max(self.max_mean_reward, mean)
-            discounted_r = (discounted_r - self.max_mean_reward) / std # TODO (maybe) use a state-value approx
-            print('bsize: %d std: %.3f mean: %.3f max_mean: %.3f' % (discounted_r.size, std, mean, self.max_mean_reward))
-            self.NN.backward(self.state_batch, self.action_batch, discounted_r)
+                printnorm(self._sess)
+                embed()
+            r_minus_base = discounted_r - self.NNb.forward(self.state_batch).ravel()
+            self.NNb.backward(self.state_batch, discounted_r)
+            if self.startPolicyTraining:
+                self.NN.backward(self.state_batch, self.action_batch, r_minus_base)
             self.init_batch() # clean up
 
         # bookkeeping
@@ -95,20 +97,9 @@ class Agent:
             res[t] = running_add
         return res
 
-    def printnorm(self):
-        normdict={}
-        for v in tf.all_variables(): 
-         if '/W:0' in v.name or '/b:0' in v.name:
-             normdict[v.name]=np.linalg.norm(self.NN._sess.run(v))
-        pp.pprint(normdict)
-
 class NN:
-    def __init__(self, gamma): 
-        # Note for the gamma parameter: current impl did not use the forumla in textbook which has gamma^t * reward
-        # because the formula in some online articles don't have that gamma^t (since they are monte carlo method, t is always 0)
-        # mow I will just use the formula without gamma and thus a monte carlo method
-        self._sess = tf.Session()
-        self.gamma = gamma
+    def __init__(self, sess): 
+        self._sess = sess
         self.debug = False
         self.printAct = True
 
@@ -121,56 +112,33 @@ class NN:
         self.state = tf.placeholder(shape=[None, STATE_H, STATE_W, STATE_FRAME_CNT], dtype=tf.float32)
         self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
 
-        # build the policy network
-        self.conv1 = self.conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
-        self.conv2 = self.conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
-        self.fc1, self.fc1W = self.fc_layer(self.conv2, n_out=256, name='fc1')
-        self.relu1 = tf.nn.relu(self.fc1)
-        self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
-        self.logit_steer, self.steerW = self.fc_layer(self.relu1_d, n_out=len(action_steer), name='fc_steer')
-        self.logit_gas, self.gasW = self.fc_layer(self.relu1_d, n_out=len(action_gas), name='fc_gas')
-        self.logit_break,self.breakW = self.fc_layer(self.relu1_d, n_out=len(action_break), name='fc_break')
+        with tf.variable_scope('po'): # build the policy network
+            self.conv1 = conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
+            self.conv2 = conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
+            self.fc1, self.fc1W = fc_layer(self.conv2, n_out=256, name='fc1')
+            self.relu1 = tf.nn.relu(self.fc1)
+            self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
+            self.logit_steer, self.steerW = fc_layer(self.relu1_d, n_out=len(action_steer), name='fc_steer')
+            self.logit_gas, self.gasW = fc_layer(self.relu1_d, n_out=len(action_gas), name='fc_gas')
+            self.logit_break,self.breakW = fc_layer(self.relu1_d, n_out=len(action_break), name='fc_break')
 
-        self.prob_action_steer = tf.nn.softmax(self.logit_steer)
-        self.prob_action_gas = tf.nn.softmax(self.logit_gas)
-        self.prob_action_break = tf.nn.softmax(self.logit_break)
+            self.prob_action_steer = tf.nn.softmax(self.logit_steer)
+            self.prob_action_gas = tf.nn.softmax(self.logit_gas)
+            self.prob_action_break = tf.nn.softmax(self.logit_break)
 
-        # computing a lot of losses
-        self.loss_action_steer = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            self.logit_steer, self.true_action_steer))
-        self.loss_action_gas = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            self.logit_gas, self.true_action_gas))
-        self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
-            self.logit_break, self.true_action_break))
+            # computing a lot of losses
+            self.loss_action_steer = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
+                self.logit_steer, self.true_action_steer))
+            self.loss_action_gas = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
+                self.logit_gas, self.true_action_gas))
+            self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
+                self.logit_break, self.true_action_break))
 
-        self.loss = self.loss_action_steer + 0.5 * tf.nn.l2_loss(self.fc1W) # + self.loss_action_gas + self.loss_action_break 
+            self.loss = self.loss_action_steer + 0.5 * tf.nn.l2_loss(self.fc1W) # + self.loss_action_gas + self.loss_action_break 
 
-        # some other stuffs, and variable initialization
-        self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
-        self._sess.run(tf.initialize_all_variables())
+            self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
 
-
-    def conv_layer(self, input, n_in_channel, n_out_channel, filter_size, stride, name, hasRelu=True):
-        with tf.variable_scope(name):
-            filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001), name='W')
-            bias = tf.Variable(tf.constant(1.0,shape=[n_out_channel]), name='b')
-        output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
-        output = tf.nn.bias_add(output, bias)
-        # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
-        if hasRelu:
-            output = tf.nn.relu(output)
-        print("conv layer, output size: %s" % ([i.value for i in output.get_shape()]))
-        return output
-
-    def fc_layer(self, input, n_out, name):
-        n_in = np.prod(input.get_shape().as_list()[1:])
-        input = tf.reshape(input, [-1, n_in])
-        with tf.variable_scope(name):
-            W = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=0.001), name='W')
-            bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001), name='b')
-        output = tf.nn.bias_add(tf.matmul(input, W), bias)
-        print ("fc layer, input*output : %d*%d" % (n_in, n_out))
-        return output, W
+        self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='po') ))
 
     def forward_and_sample(self, input):
         input = np.expand_dims(input,0) # make a batch
@@ -201,7 +169,72 @@ class NN:
                 self.true_action_break: action_batch[:, 2],
                 self.reward:            reward_batch,
             })
-        print ('loss: %f loss_steer: %f loss_gas: %f loss_break: %f' % (loss, loss_steer, loss_gas, loss_break) )
+        print ('NN  loss: %f loss_steer: %f loss_gas: %f loss_break: %f' % (loss, loss_steer, loss_gas, loss_break) )
+
+class NNForBaseline:
+    def __init__(self,sess):
+        self._sess = sess
+        self.debug = False
+        self.printV = True
+        # create placeholders
+        self.state = tf.placeholder(shape=[None, STATE_H, STATE_W, STATE_FRAME_CNT], dtype=tf.float32)
+        self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
+
+        
+        with tf.variable_scope('ba'): # build the value network
+            self.conv1 = conv_layer(self.state, n_in_channel=STATE_FRAME_CNT, n_out_channel=16, filter_size=8, stride=4, name='conv1')
+            self.conv2 = conv_layer(self.conv1, n_in_channel=16, n_out_channel=32, filter_size=4, stride=2, name='conv2')
+            self.fc1, self.fc1W = fc_layer(self.conv2, n_out=256, name='fc1')
+            self.relu1 = tf.nn.relu(self.fc1)
+            self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
+            self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([-80.0]))
+            self.value = tf.reshape(self.value,[-1]) # if you don't flatten it, you will get a n*n matrix when you do self.value-self.reward
+
+            self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
+            self.loss = tf.reduce_mean(tf.square(self.value - self.reward)) + self.reg_loss
+
+            self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
+
+        self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='ba') ))
+
+    def forward(self, input):
+        value = self._sess.run(self.value, feed_dict={self.state: input})
+        if self.printV:
+            print 'value:' + str(value)
+        if self.debug:
+            self.debug = False
+            [conv1,conv2,fc1] = self._sess.run([self.conv1, self.conv2, self.fc1], feed_dict={self.state:input})
+            embed()
+        return value
+
+    def backward(self, state_batch, reward_batch):
+        _, loss, reg_loss = self._sess.run([self.train_op, self.loss, self.reg_loss],
+                            feed_dict={self.state: state_batch, self.reward: reward_batch})
+        print 'NNb loss: {:f} reg_loss: {:f}'.format(loss, reg_loss)
+
+
+
+def conv_layer(input, n_in_channel, n_out_channel, filter_size, stride, name, hasRelu=True):
+    with tf.variable_scope(name):
+        filt = tf.Variable(tf.truncated_normal([filter_size, filter_size, n_in_channel, n_out_channel], stddev=.001), name='W')
+        bias = tf.Variable(tf.constant(1.0,shape=[n_out_channel]), name='b')
+    output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
+    output = tf.nn.bias_add(output, bias)
+    # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
+    if hasRelu:
+        output = tf.nn.relu(output)
+    print("conv layer, output size: %s" % ([i.value for i in output.get_shape()]))
+    return output
+
+def fc_layer(input, n_out, name, bias_init=None):
+    n_in = np.prod(input.get_shape().as_list()[1:])
+    input = tf.reshape(input, [-1, n_in])
+    with tf.variable_scope(name):
+        W = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=0.001), name='W')
+        bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001) if bias_init==None else bias_init, name='b')
+    output = tf.nn.bias_add(tf.matmul(input, W), bias)
+    print ("fc layer, input*output : %d*%d" % (n_in, n_out))
+    return output, W
 
 def plot(inputs):
     # example usage: plot([conv1, conv2]); plot([state])
@@ -212,6 +245,13 @@ def plot(inputs):
         for j in xrange(col):
             ax[i][j].imshow(inputs[i][0,:,:,j])
     plt.show()
+
+def printnorm(sess):
+    normdict={}
+    for v in tf.all_variables(): 
+     if '/W:0' in v.name or '/b:0' in v.name:
+         normdict[v.name]=np.linalg.norm(sess.run(v))
+    pp.pprint(normdict)
 
 
 if __name__=='__main__':

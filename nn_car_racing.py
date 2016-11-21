@@ -20,6 +20,9 @@ if __name__=="__main__":
         if k==key.D:     agent.debug=True
         if k==key.N:     agent.NN.debug=True
         if k==key.A:     agent.NN.printAct = not agent.NN.printAct
+        if k==key.B:     agent.NNb.debug=True
+        if k==key.V:     agent.NNb.printV = not agent.NNb.printV
+        if k==key.T:     agent.startPolicyTraining= not agent.startPolicyTraining
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
