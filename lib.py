@@ -15,7 +15,7 @@ action_gas = [0.1, 0.5, 1.0]
 action_break = [0.0, 0.1]
 
 BATCH_SIZE = 5
-GAMMA = 0.9
+GAMMA = 0.999
 
 class EnvHelper:
     state_queue = deque(maxlen=STATE_FRAME_CNT) # the state is made up of 4 most recent frames
@@ -34,14 +34,14 @@ class Agent:
 
     def __init__(self):
         self._sess = tf.Session()
-        self.NN = NN(self._sess)
-        self.NNb = NNForBaseline(self._sess)
+        self.NN = NN(self._sess, self)
+        self.NNb = NNForBaseline(self._sess, self)
 
         self.last_action, self.last_state = None, None
         self.init_batch()
         self.debug = False
         self.max_mean_reward = -500.0
-        self.startPolicyTraining = False
+        self.startPolicyTraining = True
 
     def init_batch(self):
         self.epEnd = set() # stores the time step where the episode ends
@@ -98,10 +98,11 @@ class Agent:
         return res
 
 class NN:
-    def __init__(self, sess): 
+    def __init__(self, sess, ref_to_agent): 
         self._sess = sess
         self.debug = False
-        self.printAct = True
+        self.printAct = False
+        self.agent = ref_to_agent
 
         # create placeholders
         self.true_action_steer = tf.placeholder(shape=[None], dtype=tf.int32)
@@ -172,10 +173,12 @@ class NN:
         print ('NN  loss: %f loss_steer: %f loss_gas: %f loss_break: %f' % (loss, loss_steer, loss_gas, loss_break) )
 
 class NNForBaseline:
-    def __init__(self,sess):
+    def __init__(self,sess,ref_to_agent):
         self._sess = sess
         self.debug = False
         self.printV = True
+        self.agent = ref_to_agent
+
         # create placeholders
         self.state = tf.placeholder(shape=[None, STATE_H, STATE_W, STATE_FRAME_CNT], dtype=tf.float32)
         self.reward = tf.placeholder(shape=[None], dtype=tf.float32)
@@ -187,7 +190,7 @@ class NNForBaseline:
             self.fc1, self.fc1W = fc_layer(self.conv2, n_out=256, name='fc1')
             self.relu1 = tf.nn.relu(self.fc1)
             self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
-            self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([-80.0]))
+            self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([-45.0]))
             self.value = tf.reshape(self.value,[-1]) # if you don't flatten it, you will get a n*n matrix when you do self.value-self.reward
 
             self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
