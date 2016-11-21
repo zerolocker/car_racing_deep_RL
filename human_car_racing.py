@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def preprocess_state(rgb, flatten=False):
     grey =  np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
     grey = grey[:80,...] # crop the bottom (which are some game statistics, useless)
-    grey -= 153.0 # substract mean (computed from my plays)
+    grey -= 159.0 # substract mean (computed from my plays)
     return grey
 
 if __name__=="__main__":
@@ -48,7 +48,6 @@ if __name__=="__main__":
             if steps<100:
                 env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if ststeps<100
             s, r, done, info = env.step(a)
-            print(a)
             total_reward += r
             
             nFrame += 1

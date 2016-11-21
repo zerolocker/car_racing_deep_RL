@@ -15,7 +15,7 @@ action_gas = [0.1, 0.5, 1.0]
 action_break = [0.0, 0.1]
 
 BATCH_SIZE = 5
-GAMMA = 0.99
+GAMMA = 0.9
 
 class EnvHelper:
     state_queue = deque(maxlen=STATE_FRAME_CNT) # the state is made up of 4 most recent frames

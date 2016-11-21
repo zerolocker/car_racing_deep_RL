@@ -10,7 +10,7 @@ render = False if len(sys.argv)>1 and sys.argv[1]=='norender' else True
 def preprocess_state(rgb, flatten=False):
     grey =  np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
     grey = grey[:80,...] # crop the bottom (which are some game statistics, useless)
-    grey -= 153.0 # substract mean (computed from my plays)
+    grey -= 159.0 # substract mean (computed from my plays)
     return grey
 
 if __name__=="__main__":
