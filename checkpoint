@@ -1,0 +1,2 @@
+model_checkpoint_path: "norview.gamma0.999-1655"
+all_model_checkpoint_paths: "norview.gamma0.999-1655"
