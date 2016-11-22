@@ -2,9 +2,10 @@ from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import pprint as pp
+import pprint as pp, heapq, math
 from IPython import embed
 import ipdb
+import helper
 
 STATE_H = 80
 STATE_W = 96
@@ -36,11 +37,12 @@ class Agent:
         self._sess = tf.Session()
         self.NN = NN(self._sess, self)
         self.NNb = NNForBaseline(self._sess, self)
+        self.stepsStat = helper.RunningPercentile(0.9)
+        self.stepsAlive = 0 # bookkeeping the step count of this episode
 
         self.last_action, self.last_state = None, None
         self.init_batch()
         self.debug = False
-        self.max_mean_reward = -500.0
         self.startPolicyTraining = True
 
     def init_batch(self):
@@ -49,22 +51,28 @@ class Agent:
         self.action_batch = []
         self.reward_batch = []
 
-    def act(self, state, last_reward, done):
+    def act(self, state, last_reward, done, epCnt):
         actions_to_take, actions_to_take_idx = self.NN.forward_and_sample(state)
 
         if self.last_state is None: # Initialization phase, no training involved
             self.last_state = state
             self.last_action = actions_to_take_idx
+            self.stepsAlive += 1
             return actions_to_take
 
         self.state_batch.append(self.last_state)
         self.action_batch.append(self.last_action)
-        self.reward_batch.append(last_reward)
 
         if done:
-            assert self.reward_batch[-1] < -90 # make sure epEnd and reward_batch is correctly aligned
+            self.stepsStat.add(self.stepsAlive)
+            self.reward_batch.append(1.0 if self.stepsAlive > self.stepsStat.get() else -1.0) # calculate my internal reward
+            assert abs(self.reward_batch[-1]) == 1.0 # make sure epEnd and reward_batch is correctly aligned
             self.epEnd.add(len(self.reward_batch)-1)
-            # TODO (maybe) can call tf.compute_gradient every episode rather than every batch to amortize
+            print 'episode: {} step: {}  perc,size: {},{} reward: {:.1f}'.format(epCnt,self.stepsAlive,self.stepsStat.get(), self.stepsStat.len(),self.reward_batch[-1])
+            self.stepsAlive = 0
+            last_state = None
+        else:
+            self.reward_batch.append(0.0) # calculate my internal reward
 
         if len(self.epEnd) == BATCH_SIZE: # a batch of episodes has been collected
             discounted_r = self.discount_rewards(self.reward_batch, self.epEnd)
@@ -81,6 +89,7 @@ class Agent:
         # bookkeeping
         self.last_state = state
         self.last_action = actions_to_take_idx
+        self.stepsAlive += 1
 
         return actions_to_take
 
@@ -176,7 +185,7 @@ class NNForBaseline:
     def __init__(self,sess,ref_to_agent):
         self._sess = sess
         self.debug = False
-        self.printV = True
+        self.printV = False
         self.agent = ref_to_agent
 
         # create placeholders
@@ -190,7 +199,7 @@ class NNForBaseline:
             self.fc1, self.fc1W = fc_layer(self.conv2, n_out=256, name='fc1')
             self.relu1 = tf.nn.relu(self.fc1)
             self.relu1_d = tf.nn.dropout(self.relu1, 0.5)
-            self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([-45.0]))
+            self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([0.0]))
             self.value = tf.reshape(self.value,[-1]) # if you don't flatten it, you will get a n*n matrix when you do self.value-self.reward
 
             self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)

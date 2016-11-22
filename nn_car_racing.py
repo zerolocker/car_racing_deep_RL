@@ -55,7 +55,7 @@ if __name__=="__main__":
                 env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if steps<30
                 unprocessed_s, r, done, info = env.step(action=[0., 1., 0.])
             else:
-                a = agent.act(envHelper.get_state(), r, done); 
+                a = agent.act(envHelper.get_state(), r, done, ep); 
                 a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
                 if done: break
                 r = 0;
@@ -73,8 +73,8 @@ if __name__=="__main__":
                 # plt.imshow(s, cmap='gray')
                 # plt.show()
                 # plt.pause(0.01) # make the figure draw non-blockingly. using this you don't even need to call plt.ion() at the start
-            if done:
-                 print("episode {} (undiscounted)total_reward {:+0.2f}".format(ep, total_reward))
+            #if done:
+            #     print("episode {} (undiscounted)total_reward {:+0.2f}".format(ep, total_reward))
             steps += 1
     env.monitor.close()
 
