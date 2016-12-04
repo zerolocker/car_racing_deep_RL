@@ -11,9 +11,9 @@ STATE_H = 80
 STATE_W = 96
 STATE_FRAME_CNT = 4
 # discrete actions used by the agent
-action_steer = [-1.0, -0.5, 0.0, 0.5, 1.0]
-action_gas = [0.1, 0.5, 1.0]
-action_break = [0.0, 0.1]
+action_steer = [-1.0, 0.0, 1.0]
+action_gas = [0.0, 1.0]
+action_break = [0.0, 0.8]
 
 BATCH_SIZE = 5
 GAMMA = 0.999
@@ -107,7 +107,7 @@ class Agent:
         return res
 
 class NN:
-    def __init__(self, sess, ref_to_agent): 
+    def __init__(self, sess, ref_to_agent, lr=0.0001): 
         self._sess = sess
         self.debug = False
         self.printAct = False
@@ -144,9 +144,9 @@ class NN:
             self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
                 self.logit_break, self.true_action_break))
 
-            self.loss = self.loss_action_steer + 0.5 * tf.nn.l2_loss(self.fc1W) # + self.loss_action_gas + self.loss_action_break 
+            self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break # no regularization + 0.5 * tf.nn.l2_loss(self.fc1W)
 
-            self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
+            self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 
         self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='po') ))
 
