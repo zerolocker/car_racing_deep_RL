@@ -1,4 +1,4 @@
-import sys, math, time
+import sys, math, time, os
 import numpy as np
 
 from IPython import embed
@@ -13,16 +13,46 @@ def preprocess_state(rgb, flatten=False):
     grey -= 159.0 # substract mean (computed from my plays)
     return grey
 
+
+class HumanPlayRecorder:
+    def __init__(self, file_prefix=''):
+        if not os.path.exists('humanplaydata'): os.mkdir('humanplaydata')
+        self.fname = 'humanplaydata/'+ file_prefix + '_%s' % time.strftime('%H%M%m%d')
+        self.dumpcount = 0
+        self.bufsize = 1000
+        self.statebuf = []
+        self.actionbuf = []
+
+    def recordHumanPlay(self, state, action):
+        self.statebuf.append(state)
+        self.actionbuf.append(action)
+        if len(self.statebuf) >= self.bufsize:
+            print 'dumped'
+            np.save(self.fname + '_%03d.npy' % self.dumpcount,
+                    {'state':np.array(self.statebuf,dtype=np.float16), 'action': np.array(self.actionbuf,dtype=np.float16)})
+            self.statebuf = []
+            self.actionbuf = []
+            self.dumpcount += 1
+
+    def readHumanPlay(self, prefix):
+        files = filter(lambda s:s.startswith(prefix), os.listdir('humanplaydata'))
+        files = sorted(files)
+        assert len(files)>0, 'Cannot find any matches'
+        states, actions = [], []
+        for f in files:
+            datadict=np.load('humanplaydata/'+f).item()
+            states.append(datadict['state'])
+            actions.append(datadict['action'])
+        states_all = np.concatenate(states)
+        actions_all = np.concatenate(actions)
+        return states_all, actions_all
+
+
+
 if __name__=="__main__":
     from pyglet.window import key
     a = np.array( [0.0, 0.0, 0.0] )
     def key_press(k, mod):
-        if k==key.D:     agent.debug=True
-        if k==key.N:     agent.NN.debug=True
-        if k==key.A:     agent.NN.printAct = not agent.NN.printAct
-        if k==key.B:     agent.NNb.debug=True
-        if k==key.V:     agent.NNb.printV = not agent.NNb.printV
-        if k==key.T:     agent.startPolicyTraining= not agent.startPolicyTraining
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
@@ -42,9 +72,9 @@ if __name__=="__main__":
     
     # Initialize my agent's components
     envHelper = lib.EnvHelper()
-    agent = lib.Agent()
+    rec = HumanPlayRecorder()
 
-    SKIP_FRAME = 5
+    SKIP_FRAME = 1
     ep = 0
     while True:
         env.reset()
@@ -55,12 +85,12 @@ if __name__=="__main__":
                 env.contactListener_keepref.lastTouchRoadTime = time.time() # so that the agent won't be killed if steps<30
                 unprocessed_s, r, done, info = env.step(action=[0., 1., 0.])
             else:
-                a = agent.act(envHelper.get_state(), r, done, ep); 
-                a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
+                executed_action = a.copy()
+                rec.recordHumanPlay(envHelper.get_state(), executed_action)
                 if done: break
                 r = 0;
                 for i in xrange(SKIP_FRAME):
-                    unprocessed_s, r_f, done, info = env.step(a)
+                    unprocessed_s, r_f, done, info = env.step(executed_action)
                     r += r_f
                     if render and not record_video: env.render() 
                     if done: break
