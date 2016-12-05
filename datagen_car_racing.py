@@ -3,7 +3,7 @@ import numpy as np
 
 from IPython import embed
 
-import lib, my_car_env
+import lib
 
 render = False if len(sys.argv)>1 and sys.argv[1]=='norender' else True
 
@@ -50,6 +50,7 @@ class HumanPlayRecorder:
 
 
 if __name__=="__main__":
+    import my_car_env
     from pyglet.window import key
     a = np.array( [0.0, 0.0, 0.0] )
     def key_press(k, mod):

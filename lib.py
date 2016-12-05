@@ -14,6 +14,13 @@ STATE_FRAME_CNT = 4
 action_steer = [-1.0, 0.0, 1.0]
 action_gas = [0.0, 1.0]
 action_break = [0.0, 0.8]
+def map_to_discrete(action_vec):
+    steerR, gasR, breakR = action_vec
+    steer_dis = [i for i,val in enumerate(action_steer) if abs(val-steerR)<1e-3][0]
+    gas_dis = [i for i,val in enumerate(action_gas) if abs(val-gasR)<1e-3][0]
+    break_dis = [i for i,val in enumerate(action_break) if abs(val-breakR)<1e-3][0]
+    return steer_dis, gas_dis, break_dis
+
 
 BATCH_SIZE = 5
 GAMMA = 0.999
@@ -143,8 +150,9 @@ class NN:
                 self.logit_gas, self.true_action_gas))
             self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
                 self.logit_break, self.true_action_break))
+            self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
 
-            self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break # no regularization + 0.5 * tf.nn.l2_loss(self.fc1W)
+            self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + self.reg_loss
 
             self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
 

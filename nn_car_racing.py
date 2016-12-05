@@ -44,7 +44,7 @@ if __name__=="__main__":
     envHelper = lib.EnvHelper()
     agent = lib.Agent()
 
-    SKIP_FRAME = 5
+    SKIP_FRAME = 1
     ep = 0
     while True:
         env.reset()
@@ -56,7 +56,7 @@ if __name__=="__main__":
                 unprocessed_s, r, done, info = env.step(action=[0., 1., 0.])
             else:
                 a = agent.act(envHelper.get_state(), r, done, ep); 
-                a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
+                # a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
                 if done: break
                 r = 0;
                 for i in xrange(SKIP_FRAME):

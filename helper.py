@@ -34,3 +34,10 @@ class RunningPercentile:
     def leftPop(self): e = heapq.heappop(self.left); assert e<0; return -e;
     def rightPop(self): return heapq.heappop(self.right)
 
+
+
+def printdebug(str, logfile=None):
+    print('  ----   DEBUG: '+str)
+    if logfile is not None:
+        logfile.write('  ----   DEBUG: '+str+'\n')
+        logfile.flush()
