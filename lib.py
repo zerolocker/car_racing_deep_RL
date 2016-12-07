@@ -150,7 +150,7 @@ class NN:
                 self.logit_gas, self.true_action_gas))
             self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
                 self.logit_break, self.true_action_break))
-            self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
+            self.reg_loss = 0.00 * tf.nn.l2_loss(self.fc1W)
 
             self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + self.reg_loss
 

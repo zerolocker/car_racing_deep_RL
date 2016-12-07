@@ -4,6 +4,7 @@ import numpy as np
 from IPython import embed
 
 import lib, my_car_env
+from helper import printdebug
 
 render = False if len(sys.argv)>1 and sys.argv[1]=='norender' else True
 
@@ -43,6 +44,7 @@ if __name__=="__main__":
     # Initialize my agent's components
     envHelper = lib.EnvHelper()
     agent = lib.Agent()
+    logFile = open(sys.argv[1], 'a')
 
     SKIP_FRAME = 1
     ep = 0
@@ -57,7 +59,9 @@ if __name__=="__main__":
             else:
                 a = agent.act(envHelper.get_state(), r, done, ep); 
                 # a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
-                if done: break
+                if done:
+                   printdebug( 'total_reward_from_env: %.2f' % total_reward, logFile)
+                   break
                 r = 0;
                 for i in xrange(SKIP_FRAME):
                     unprocessed_s, r_f, done, info = env.step(a)
