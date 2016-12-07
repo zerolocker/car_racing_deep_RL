@@ -1,11 +1,39 @@
 import sys, math, time
 import numpy as np
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('-log', type=str, dest='logfile', help='', required=True)
+parser.add_argument('-render', type=bool, dest='render', help='', default=True)
+parser.add_argument('-chkpt', type=str, dest='chkpt', help='path of checkpoint to restore', default='')
+options = parser.parse_args()
+
 
 from IPython import embed
+import lib, my_car_env, tensorflow as tf
+from helper import printdebug
 
-import lib, my_car_env
+render = options.render
 
-render = False if len(sys.argv)>1 and sys.argv[1]=='norender' else True
+def var_by_name(name):
+    return [v for v in tf.all_variables() if v.name==name][0]
+def restore(sess, chkpt_fname):
+    vardict = {
+     u'ba/conv1/W:0': 'po/conv1/W',
+     u'ba/conv1/b:0': 'po/conv1/b',
+     u'ba/conv2/W:0': 'po/conv2/W',
+     u'ba/conv2/b:0': 'po/conv2/b',
+     u'ba/fc1/W:0': 'po/fc1/W',
+     u'ba/fc1/b:0': 'po/fc1/b',
+    }
+
+    for local, remote in sorted(vardict.items()):
+        print 'restoring: %s  <-  %s' % (local, remote)
+        saver=tf.train.Saver({remote:var_by_name(local)})
+        saver.restore(sess, chkpt_fname)
+
+    print 'restoring: po/Everything  <-  po/Everything'
+    saver=tf.train.Saver(tf.get_collection(tf.GraphKeys.VARIABLES, scope='po'))
+    saver.restore(sess, chkpt_fname)
 
 def preprocess_state(rgb, flatten=False):
     grey =  np.dot(rgb[..., :3], [0.299, 0.587, 0.114])
@@ -43,6 +71,9 @@ if __name__=="__main__":
     # Initialize my agent's components
     envHelper = lib.EnvHelper()
     agent = lib.Agent()
+    logFile = open(options.logfile, 'a')
+    if options.chkpt != '':
+        restore(agent._sess, options.chkpt)
 
     SKIP_FRAME = 1
     ep = 0
@@ -57,7 +88,9 @@ if __name__=="__main__":
             else:
                 a = agent.act(envHelper.get_state(), r, done, ep); 
                 # a[1]=0.0; a[2]=0.0; # ignore agent's gas, brake action
-                if done: break
+                if done:
+                   printdebug( 'total_reward_from_env: %.2f' % total_reward, logFile)
+                   break
                 r = 0;
                 for i in xrange(SKIP_FRAME):
                     unprocessed_s, r_f, done, info = env.step(a)
