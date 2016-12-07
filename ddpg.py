@@ -1,13 +1,23 @@
 """
 Implementation of DDPG - Deep Deterministic Policy Gradient
+
+I tried the following things, but still not working: (search for # tried_but_not_worked to locate them)
+
++ initialized the weights with my supervised-learning pretrained model at the beginning of training
++ fill the replay memory (10000 frames) with human play data at the beginning of training
++ I thought the negative reward -100 given when the agent drives out of the lane is around 2 orders of magnitude larger than the normal reward at each time step, which might incur a very large gradient and make the learning instable, so I changed it from -100 to -1. But still not work.
++ add exploration with Ornstein-Uhlenbeck process as suggested by the DDPG paper(seems unhelpful)
+
+Even combining these, the ouput logit is still monotoncially increasing, making the steering action very close to 1.0,  and the car always turn right.
+So I guess there is some bugs in the DDPG implementation
 Original code is from https://github.com/pemami4911/deep-rl/blob/master/ddpg/ddpg.py 
 written by Patrick Emami
 I changed the input and output and network archetecture.
 And changed the mini-batch training frequency --- original frequency is 
 training at every time step, resulting in overfitting to a poor policy (always turning left/right)
-since the agent cannot see any nice states-action pairs due to its poor policy
+since the agent cannot see any nice states-action pairs due to its poor policy.
 """
-
+import matplotlib.pyplot as plt
 import tensorflow as tf, numpy as np, gym, tflearn
 from IPython import embed
 from helper import printdebug
@@ -18,9 +28,9 @@ import my_car_env, lib, time
 #   Training Parameters
 # ==========================
 # Base learning rate for the Actor network
-ACTOR_LEARNING_RATE = 0.0001
+ACTOR_LEARNING_RATE = 0.00001
 # Base learning rate for the Critic Network
-CRITIC_LEARNING_RATE = 0.001
+CRITIC_LEARNING_RATE = 0.0001
 # Discount factor 
 GAMMA = 0.99
 # Soft target update param
@@ -37,13 +47,14 @@ SUMMARY_DIR = './results/tf_ddpg'
 RANDOM_SEED = 1234
 # Size of replay buffer
 BUFFER_SIZE = 10000
-MINIBATCH_SIZE = 64
+MINIBATCH_SIZE = 200
 
 
 
 def conv_layer(input, n_in_channel, n_out_channel, filter_size, stride, name, hasRelu=True):
+    n_in = np.prod(input.get_shape().as_list()[1:])
     with tf.variable_scope(name):
-        initval = np.sqrt(3)/np.sqrt(n_in_channel*filter_size*filter_size)
+        initval = np.sqrt(3)/np.sqrt(n_in)
         filt = tf.Variable(tf.random_uniform([filter_size, filter_size, n_in_channel, n_out_channel],-initval,initval), name='W')
         bias = tf.Variable(tf.constant(0.0,shape=[n_out_channel]), name='b')
     output = tf.nn.conv2d(input, filt, [1,stride,stride,1], padding='SAME')
@@ -51,15 +62,16 @@ def conv_layer(input, n_in_channel, n_out_channel, filter_size, stride, name, ha
     # output = _instance_norm(output) # TODO maybe batch normalization here to avoid bad initialization problem
     if hasRelu:
         output = tf.nn.relu(output)
-    print("conv layer, output size: %s" % ([i.value for i in output.get_shape()]))
+    print("conv layer, output size: %s initval: %f" % ([i.value for i in output.get_shape()], initval))
     return output
 
 def fc_layer(input, n_out, name, weight_init=None, bias_init=None):
     n_in = np.prod(input.get_shape().as_list()[1:])
     input = tf.reshape(input, [-1, n_in])
     with tf.variable_scope(name):
-        initval = np.sqrt(3)/np.sqrt(n_in)
-        W = tf.Variable(tf.random_uniform([n_in, n_out],-initval,initval) if weight_init==None else weight_init, name='W', dtype=tf.float32)
+        # initval = np.sqrt(3)/np.sqrt(n_in)
+        # W = tf.Variable(tf.random_uniform([n_in, n_out],-initval,initval) if weight_init==None else weight_init, name='W', dtype=tf.float32)
+        W = tf.Variable(tf.truncated_normal([n_in, n_out], stddev=0.001) if weight_init==None else weight_init, name='W', dtype=tf.float32)
         bias = tf.Variable(tf.truncated_normal([n_out], stddev=0.001) if bias_init==None else bias_init, name='b')
     output = tf.nn.bias_add(tf.matmul(input, W), bias)
     print ("fc layer, input*output : %d*%d" % (n_in, n_out))
@@ -76,6 +88,7 @@ class ActorNetwork(object):
     """
     def __init__(self, sess, action_dim, learning_rate, tau):
         self.sess = sess
+        self.printLogits = False
         self.a_dim = action_dim
         self.learning_rate = learning_rate
         self.tau = tau
@@ -118,7 +131,7 @@ class ActorNetwork(object):
         b_init = tf.constant([0,5,-5], dtype=tf.float32)
         w_init = tf.random_uniform([256,3],-0.0003,0.0003)
         fc_out, fc_outW = fc_layer(relu1_d, self.a_dim, 'fc_out', w_init, bias_init=b_init)
-        steer_gas_break = tf.nn.tanh(fc_out) * [1,0.5,0.5] + [0,0.5,0.5]
+        steer_gas_break = tf.nn.tanh(fc_out)*[1.0,0.5,0.5]+[0.0,0.5,0.5]
         return inputs, fc_out, steer_gas_break
 
     def train(self, inputs, a_gradient):
@@ -131,7 +144,7 @@ class ActorNetwork(object):
         out_np, steer_gas_break_np = self.sess.run([self.out, self.steer_gas_break], feed_dict={
             self.inputs: inputs
         })
-        if inputs.shape[0] == 1:
+        if self.printLogits and inputs.shape[0] == 1:
             print ["%0.2f" % o for o in out_np[0]]
         return steer_gas_break_np
 
@@ -254,6 +267,10 @@ class Agent:
         self.sess = tf.Session()
         self.last_action, self.last_state = None, None
 
+        self.EXPLORE_STEPS = 10000
+        self.explore_flag = True
+        self.epsilon = 1.0
+
         action_dim = 3
         self.actor = ActorNetwork(self.sess, action_dim, \
             ACTOR_LEARNING_RATE, TAU)
@@ -266,29 +283,40 @@ class Agent:
         self.actor.update_target_network()
         self.critic.update_target_network()
         self.replay_buffer = ReplayBuffer(BUFFER_SIZE, RANDOM_SEED)
-        load_human_replay_mem(self.replay_buffer)
+        # tried_but_not_worked: fill the replay memory (10000 frames) with human play data at the beginning of training
+        # load_human_replay_mem(self.replay_buffer)
 
         # bookkeeping
         self.ep_ave_max_q = 0
 
-
     def act(self, state, last_reward, done, epCnt, human_action=None):
+        # tried_but_not_worked: control the magnitude of the reward
+        if done:
+            assert last_reward == -100
+            last_reward = -1
         # if human_action is not None, the agent learns human's behaviour 
         # by putting state transitions into replay memory
         learn_from_human = human_action is not None
         if learn_from_human:
             a = human_action
         else:
-            # TODO Add exploration noise
             a = self.actor.predict(np.expand_dims(state,0)).reshape(-1)
+            # tried_but_not_worked add exploration with Ornstein-Uhlenbeck process as suggested by the DDPG (seems unhelpful)
+            self.epsilon -= 1.0 / self.EXPLORE_STEPS
+            noise_t = np.zeros([3])
+            noise_t[0] = self.explore_flag * max(self.epsilon, 0) * OU(a[0],  0.0 , 0.60, 0.30)
+            noise_t[1] = self.explore_flag * max(self.epsilon, 0) * OU(a[1],  0.5 , 1.00, 0.10)
+            noise_t[2] = self.explore_flag * max(self.epsilon, 0) * OU(a[2], -0.1 , 1.00, 0.05)
+            a += noise_t
+
         ep_ave_max_q_to_return = 0
 
         if self.last_state is None: # just use current state-action to initialize, although wrong
             self.last_state = state
             self.last_action = a
 
-        # add only 5% experience into replay buffer
-        if learn_from_human or np.random.rand()<0.05:
+        # add only 10% experience into replay buffer
+        if learn_from_human or np.random.rand()<0.1:
             self.replay_buffer.add(self.last_state.copy(), self.last_action.copy(), last_reward, done, state)
 
         # train the network on only 10% time steps
@@ -318,6 +346,7 @@ class Agent:
             # Update the actor policy using the sampled gradient
             a_outs = self.actor.predict(s_batch)                
             grads = self.critic.action_gradients(s_batch, a_outs)
+            print(np.max(grads),np.min(grads))
             self.actor.train(s_batch, grads[0])
 
             # Update target networks
@@ -332,6 +361,41 @@ class Agent:
         self.last_action = a
         return a, ep_ave_max_q_to_return
 
+def OU(x, mu, theta, sigma):
+    return theta * (mu - x) + sigma * np.random.randn(1)
+def var_by_name(name):
+    return [v for v in tf.all_variables() if v.name==name][0]
+def restore(sess, chkpt_fname):
+    vardict = {
+    'conv1/W:0': 'po/conv1/W',
+    'conv1/b:0': 'po/conv1/b',
+    'conv1_1/W:0': 'po/conv1/W',
+    'conv1_1/b:0': 'po/conv1/b',
+    'conv1_2/W:0': 'po/conv1/W',
+    'conv1_2/b:0': 'po/conv1/b',
+    'conv1_3/W:0': 'po/conv1/W',
+    'conv1_3/b:0': 'po/conv1/b',
+    'conv2/W:0': 'po/conv2/W',
+    'conv2/b:0': 'po/conv2/b',
+    'conv2_1/W:0': 'po/conv2/W',
+    'conv2_1/b:0': 'po/conv2/b',
+    'conv2_2/W:0': 'po/conv2/W',
+    'conv2_2/b:0': 'po/conv2/b',
+    'conv2_3/W:0': 'po/conv2/W',
+    'conv2_3/b:0': 'po/conv2/b',
+    'fc1/W:0': 'po/fc1/W',
+    'fc1/b:0': 'po/fc1/b',
+    'fc1_1/W:0': 'po/fc1/W',
+    'fc1_1/b:0': 'po/fc1/b',
+    'fc1_2/W:0': 'po/fc1/W',
+    'fc1_2/b:0': 'po/fc1/b',
+    'fc1_3/W:0': 'po/fc1/W',
+    'fc1_3/b:0': 'po/fc1/b',
+    }
+    for local, remote in sorted(vardict.items()):
+        print 'restoring: %s  <-  %s' % (local, remote)
+        saver=tf.train.Saver({remote:var_by_name(local)})
+        saver.restore(sess, chkpt_fname)
 
 def load_human_replay_mem(replay_buffer):
     print 'Loading human replay memory...'
@@ -354,6 +418,10 @@ if __name__ == '__main__':
         global human_play
         if k==key.H:     human_play  = not human_play
         if k==key.D:     agent.debug = True
+        if k==key.A:     agent.actor.printLogits = not agent.actor.printLogits
+        if k==key.E:     
+            agent.explore_flag = not agent.explore_flag
+            print 'explore_flag: %s, current epsilon: %f' % (agent.explore_flag, agent.epsilon)
         if k==key.LEFT:  a[0] = -1.0
         if k==key.RIGHT: a[0] = +1.0
         if k==key.UP:    a[1] = +1.0
@@ -378,6 +446,8 @@ if __name__ == '__main__':
     agent = Agent()
     summary_ops, summary_vars = build_summaries(agent)
     writer = tf.train.SummaryWriter(SUMMARY_DIR, agent.sess.graph)
+    # tried_but_not_worked: initialize weights with my supervised-learning pretrained model at the beginning of training
+    restore(agent.sess,'chkpts/reg0.005.ckpt')
     ep = 0
     while True:
         env.reset()
