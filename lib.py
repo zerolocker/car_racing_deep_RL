@@ -5,7 +5,6 @@ import tensorflow as tf
 import pprint as pp, heapq, math
 from IPython import embed
 import ipdb
-import helper
 
 STATE_H = 80
 STATE_W = 96
@@ -22,7 +21,7 @@ def map_to_discrete(action_vec):
     return steer_dis, gas_dis, break_dis
 
 
-BATCH_SIZE = 5
+BATCH_SIZE = 1
 GAMMA = 0.999
 
 class EnvHelper:
@@ -44,8 +43,6 @@ class Agent:
         self._sess = tf.Session()
         self.NN = NN(self._sess, self)
         self.NNb = NNForBaseline(self._sess, self)
-        self.stepsStat = helper.RunningPercentile(0.9)
-        self.stepsAlive = 0 # bookkeeping the step count of this episode
 
         self.last_action, self.last_state = None, None
         self.init_batch()
@@ -64,22 +61,14 @@ class Agent:
         if self.last_state is None: # Initialization phase, no training involved
             self.last_state = state
             self.last_action = actions_to_take_idx
-            self.stepsAlive += 1
             return actions_to_take
 
         self.state_batch.append(self.last_state)
         self.action_batch.append(self.last_action)
+        self.reward_batch.append(last_reward)
 
         if done:
-            self.stepsStat.add(self.stepsAlive)
-            self.reward_batch.append(1.0 if self.stepsAlive > self.stepsStat.get() else -1.0) # calculate my internal reward
-            assert abs(self.reward_batch[-1]) == 1.0 # make sure epEnd and reward_batch is correctly aligned
             self.epEnd.add(len(self.reward_batch)-1)
-            print 'episode: {} step: {}  perc,size: {},{} reward: {:.1f}'.format(epCnt,self.stepsAlive,self.stepsStat.get(), self.stepsStat.len(),self.reward_batch[-1])
-            self.stepsAlive = 0
-            last_state = None
-        else:
-            self.reward_batch.append(0.0) # calculate my internal reward
 
         if len(self.epEnd) == BATCH_SIZE: # a batch of episodes has been collected
             discounted_r = self.discount_rewards(self.reward_batch, self.epEnd)
@@ -96,7 +85,6 @@ class Agent:
         # bookkeeping
         self.last_state = state
         self.last_action = actions_to_take_idx
-        self.stepsAlive += 1
 
         return actions_to_take
 
@@ -114,7 +102,7 @@ class Agent:
         return res
 
 class NN:
-    def __init__(self, sess, ref_to_agent, lr=0.0001): 
+    def __init__(self, sess, ref_to_agent): 
         self._sess = sess
         self.debug = False
         self.printAct = False
@@ -154,7 +142,7 @@ class NN:
 
             self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + self.reg_loss
 
-            self.train_op = tf.train.AdamOptimizer(learning_rate=lr).minimize(self.loss)
+            self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
 
         self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='po') ))
 
@@ -213,7 +201,7 @@ class NNForBaseline:
             self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
             self.loss = tf.reduce_mean(tf.square(self.value - self.reward)) + self.reg_loss
 
-            self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
+            self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
 
         self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='ba') ))
 
