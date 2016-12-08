@@ -22,7 +22,7 @@ def map_to_discrete(action_vec):
 
 
 BATCH_SIZE = 1
-GAMMA = 0.999
+GAMMA = 0.99
 
 class EnvHelper:
     state_queue = deque(maxlen=STATE_FRAME_CNT) # the state is made up of 4 most recent frames
@@ -56,6 +56,7 @@ class Agent:
         self.reward_batch = []
 
     def act(self, state, last_reward, done, epCnt):
+        if last_reward <-10: last_reward = -10.0 # avoid magnitude too big
         actions_to_take, actions_to_take_idx = self.NN.forward_and_sample(state)
 
         if self.last_state is None: # Initialization phase, no training involved
@@ -138,11 +139,11 @@ class NN:
                 self.logit_gas, self.true_action_gas))
             self.loss_action_break = tf.reduce_mean(self.reward * tf.nn.sparse_softmax_cross_entropy_with_logits(
                 self.logit_break, self.true_action_break))
-            self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
+            self.reg_loss = 0.0005 * tf.nn.l2_loss(self.fc1W)
 
             self.loss = self.loss_action_steer + self.loss_action_gas + self.loss_action_break + self.reg_loss
 
-            self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
+            self.train_op = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(self.loss)
 
         self._sess.run(tf.initialize_variables( tf.get_collection(tf.GraphKeys.VARIABLES, scope='po') ))
 
@@ -198,7 +199,7 @@ class NNForBaseline:
             self.value, self.valueW = fc_layer(self.relu1_d, n_out=1, name='value',bias_init=tf.constant([0.0]))
             self.value = tf.reshape(self.value,[-1]) # if you don't flatten it, you will get a n*n matrix when you do self.value-self.reward
 
-            self.reg_loss = 0.5 * tf.nn.l2_loss(self.fc1W)
+            self.reg_loss = 0.0005 * tf.nn.l2_loss(self.fc1W)
             self.loss = tf.reduce_mean(tf.square(self.value - self.reward)) + self.reg_loss
 
             self.train_op = tf.train.AdamOptimizer(learning_rate=0.001).minimize(self.loss)
